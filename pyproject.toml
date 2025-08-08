@@ -1,0 +1,14 @@
+[project]
+name = "voicings"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "symusic>=0.5.8",
+    "tqdm>=4.67.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["voicings*"]
+exclude = ["data*"]
