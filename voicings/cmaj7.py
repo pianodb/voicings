@@ -247,7 +247,7 @@ def collect_chords_multiprocessing(n_files=100, n_processes=None):
 
 
 
-def collect_chords(n=100, aggregate_mode=True):
+def collect_chords(top_k=100, aggregate_mode=True, batch_size=10000):
     # 8 seconds for 100 midi files
     # = 1,186,253
 
@@ -259,7 +259,22 @@ def collect_chords(n=100, aggregate_mode=True):
     }
     # all_freqs = {}
     # n = 100
-    for i, (fname, midi_file) in tqdm(enumerate(yield_midi_from_tar('C:/conjunct/bigdata/aria-midi/aria-midi-v1-ext.tar.gz')), total=n):
+
+    def _save_batch():
+        nonlocal current_fragment, collector
+        df = pl.DataFrame(collector)
+        if aggregate_mode:
+            # Care only about total duration of each chord
+            df = df.group_by('fname', 'notes').agg(
+                pl.col('duration').sum().alias('duration')
+            )
+        df.write_parquet(f'data/fragments/fragment_{current_fragment}.parquet')
+        del df  # Free memory
+        current_fragment += 1
+
+    current_fragment = 0
+
+    for i, (fname, midi_file) in tqdm(enumerate(yield_midi_from_tar('C:/conjunct/bigdata/aria-midi/aria-midi-v1-ext.tar.gz')), total=top_k):
         # print("Midi file name:", midi_file.name)
         to_bytes = midi_file.read()
 
@@ -273,15 +288,26 @@ def collect_chords(n=100, aggregate_mode=True):
 
         # keep only those with >=3 notes
         chords = [chord for chord in chords if len(chord.notes) >= 3]
-        if i >= n:
+        if i >= top_k:
             break
         for chord in chords:
             collector['fname'].append(fname)
             collector['notes'].append(chord.notes)
             collector['duration'].append(chord.duration)
             # collector['at'].append(chord.at)
-    
-    df = pl.DataFrame(collector)
+
+        if (i + 1) % batch_size == 0:
+            # Save current batch to disk
+            _save_batch()
+            collector = {
+                'fname': [],
+                'notes': [],
+                'duration': [],
+                # 'at': [],
+            }
+    # Save any remaining chords
+    if collector['fname']:
+        _save_batch()
 
     # aggregate mode: 
     if aggregate_mode:
@@ -289,12 +315,14 @@ def collect_chords(n=100, aggregate_mode=True):
         df = df.group_by('fname', 'notes').agg(
             pl.col('duration').sum().alias('duration')
         )
-    return df
+    # return df
+
+
 
 if __name__ == "__main__":
     # df = collect_chords()
     # Original sequential version
-    df = collect_chords(1000) 
+    collect_chords(20000) 
     # 1.76M rows for 1000 files
     # will need about 15 MB
 
@@ -304,5 +332,4 @@ if __name__ == "__main__":
     
     # Memory-efficient multiprocessing version
     # df = collect_chords_streaming_multiprocessing(n_files=1000, n_processes=4)
-    print(f"Collected {len(df)} chord records")
-    df.write_parquet('data/chords/cmaj7.parquet')
+    # print(f"Collected {len(df)} chord records")
