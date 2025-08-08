@@ -1,37 +1,58 @@
-import tarfile
 import os
-import uuid
-from multiprocessing import Pool, cpu_count
+import glob
+import multiprocessing as mp
 from tqdm import tqdm
 import polars as pl
+from symusic import Score
+from voicings.core.chords import all_chords_for_score
 
-def process_chunk(batch, aggregate_mode, fragment_dir):
-    from symusic import Score
-    from voicings.core.chords import all_chords_for_score
-    # from your_module import Score, all_chords_for_score  # Import inside if needed for pickling
 
-    fname_list, notes_list, duration_list = [], [], []
+def process_midi_file(file_path):
+    try:
+        with open(file_path, 'rb') as f:
+            midi_bytes = f.read()
+        score = Score.from_midi(midi_bytes)
+        chords = all_chords_for_score(score)
+        chords = [c for c in chords if len(c.notes) >= 3]
 
-    for fname, midi_bytes in tqdm(batch):
-        try:
-            score = Score.from_midi(midi_bytes)
-            chords = all_chords_for_score(score)
-            chords = [ch for ch in chords if len(ch.notes) >= 3]
+        collector = {
+            'fname': [],
+            'notes': [],
+            'duration': [],
+        }
 
-            for ch in chords:
-                fname_list.append(fname)
-                notes_list.append(ch.notes)
-                duration_list.append(ch.duration)
-        except Exception:
-            continue
+        for chord in chords:
+            collector['fname'].append(file_path) # os.path.basename(file_path))
+            collector['notes'].append(chord.notes)
+            collector['duration'].append(chord.duration)
 
-    if not fname_list:
-        return None  # Skip empty results
+        return collector
 
-    df = pl.DataFrame({
-        'fname': fname_list,
-        'notes': notes_list,
-        'duration': duration_list,
+    except Exception as e:
+        # print(f"Error processing {file_path}: {e}")
+        return {
+            'fname': [file_path],
+            'notes': [None],
+            'duration': [None],
+        }
+
+
+def process_batch(batch_id, midi_files, aggregate_mode=True, output_dir="data/fragments"):
+    collector = {
+        'fname': [],
+        'notes': [],
+        'duration': [],
+    }
+
+    for midi_path in midi_files:
+        result = process_midi_file(midi_path)
+        for key in collector:
+            collector[key].extend(result[key])
+
+    df = pl.DataFrame(collector, schema={
+        'fname': pl.Utf8,
+        'notes': pl.List(pl.Int32),
+        'duration': pl.Float64,
     })
 
     if aggregate_mode:
@@ -39,48 +60,56 @@ def process_chunk(batch, aggregate_mode, fragment_dir):
             pl.col('duration').sum().alias('duration')
         )
 
-    # Write to unique file
-    fragment_path = os.path.join(fragment_dir, f"fragment_{uuid.uuid4().hex}.parquet")
-    df.write_parquet(fragment_path)
-    return fragment_path
+    os.makedirs(output_dir, exist_ok=True)
+    df.write_parquet(os.path.join(output_dir, f"fragment_{batch_id}.parquet"))
 
-def chunked(iterable, size):
-    chunk = []
-    for item in iterable:
-        chunk.append(item)
-        if len(chunk) >= size:
-            yield chunk
-            chunk = []
-    if chunk:
-        yield chunk
 
-def collect_chords(n=10000, aggregate_mode=True, chunk_size=1000, fragment_dir="data/fragments"):
-    os.makedirs(fragment_dir, exist_ok=True)
-    tar_path = 'C:/conjunct/bigdata/aria-midi/aria-midi-v1-ext.tar.gz'
+def collect_chords_directory_parallel(
+    midi_root: str,
+    batch_size: int = 1000,
+    n_processes: int = None,
+    aggregate_mode: bool = True,
+    output_dir: str = "data/fragments"
+):
+    all_midi_files = sorted(glob.glob(os.path.join(midi_root, "**", "*.mid"), recursive=True))
 
-    tasks = []
-    processed = 0
+    print(f"Found {len(all_midi_files)} MIDI files.")
 
-    with tarfile.open(tar_path, mode='r:gz') as tar:
-        midi_files = (
-            (member.name, tar.extractfile(member).read())
-            for member in tar
-            if member.name.endswith('.mid')
-        )
+    # Split into batches
+    batches = [
+        all_midi_files[i:i + batch_size]
+        for i in range(0, len(all_midi_files), batch_size)
+    ]
 
-        for batch in chunked(midi_files, chunk_size):
-            if processed >= n:
-                break
-            batch = batch[:n - processed]  # limit to n
-            processed += len(batch)
-            tasks.append((batch, aggregate_mode, fragment_dir))
+    if n_processes is None:
+        n_processes = min(mp.cpu_count(), len(batches))
 
-    # Use multiprocessing — one process per chunk
-    with Pool(cpu_count()) as pool:
-        results = list(tqdm(pool.starmap(process_chunk, tasks), total=len(tasks)))
+    print(f"Processing {len(batches)} batches using {n_processes} processes...")
 
-    print(f"✅ Finished processing {processed} MIDI files.")
-    print(f"🗂️ Fragments written to: {fragment_dir}")
+    with mp.Pool(n_processes) as pool:
+        args = [
+            (i, batch, aggregate_mode, output_dir)
+            for i, batch in enumerate(batches)
+        ]
+        
+        # Use tqdm with explicit configuration for better visibility
+        results = []
+        with tqdm(total=len(args), desc="Processing batches", unit="batch") as pbar:
+            for result in pool.starmap(process_batch, args):
+                results.append(result)
+                pbar.update(1)
+                pbar.refresh()
 
 if __name__ == "__main__":
-    collect_chords(n=10000, aggregate_mode=True, chunk_size=1000, fragment_dir="data/fragments")
+    # Example usage:
+
+    # print PID of main process
+    print(f"Main process PID: {os.getpid()}")
+
+    collect_chords_directory_parallel(
+        midi_root="C:/conjunct/bigdata/aria-midi/aria-midi-v1-ext/data",
+        batch_size=1000,
+        n_processes=4,
+        aggregate_mode=True,
+        output_dir="data/fragments"
+    )
