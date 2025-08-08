@@ -12,7 +12,8 @@ def yield_midi_from_tar(tar_gz):
             for member in tar: # .getmembers():
                 if member.name.endswith('.mid'):
                     f = tar.extractfile(member)
-                    yield f
+                    # Create a file-like object with name attribute
+                    yield member.name, f
                     # if f:
                         # yield io.BytesIO(f.read())
     finally:
@@ -20,7 +21,9 @@ def yield_midi_from_tar(tar_gz):
             tar_gz.close()
 
 if __name__ == "__main__":
-    for midi_file in yield_midi_from_tar('C:/conjunct/bigdata/aria-midi/aria-midi-v1-ext.tar.gz'):
+
+
+    for fname, midi_file in yield_midi_from_tar('C:/conjunct/bigdata/aria-midi/aria-midi-v1-ext.tar.gz'):
         print("Midi file name:", midi_file.name)
         to_bytes = midi_file.read()
         break

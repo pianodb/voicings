@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "polars>=1.32.2",
     "symusic>=0.5.8",
     "tqdm>=4.67.1",
 ]
@@ -12,3 +13,9 @@ dependencies = [
 [tool.setuptools.packages.find]
 include = ["voicings*"]
 exclude = ["data*"]
+
+[dependency-groups]
+dev = [
+    "pandas>=2.3.1",
+    "pyarrow>=21.0.0",
+]
