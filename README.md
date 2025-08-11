@@ -24,3 +24,7 @@ It is given the canonical ID: 0.4.7.11
 
 Inversions:
 When a group of notes can be inverted, pick the one with the most major thirds, then 
+
+Really interesting ones like [0 2 4 5 7] (#28)
+
+D Bb F Bb Ab
