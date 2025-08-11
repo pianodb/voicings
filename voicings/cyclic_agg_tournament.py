@@ -12,7 +12,21 @@
 # 3. Filter original dataframe and extract out the non-unique values
 # 4. There are usually not many non-unique values, so we can groupby on them
 # 5. So now we have many values that are possibly unique, but hopefully less than in (1)
-# 6. We may now repeat 1-5 with larger k.
+# 6. Shuffle (so that we get fresh batch of values)
+# 7. We may now repeat 1-6.
+
+
+# See also:
+# - iterative heavy-hitter extraction
+#    - In streaming algorithms, the idea is to find 
+#    - the “frequent items” in sublinear memory before processing the whole dataset.
+#    - Exactly right!
+# - multi-pass aggregation
+# - sampling + refinement
+
+# - “peeling” in streaming graph algorithms
+# - progressive filtering
+# - multi-pass distinct elimination
 
 
 import os

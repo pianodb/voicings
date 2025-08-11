@@ -22,6 +22,7 @@ def aggregate_df(df):
             )
         )
 
+
 def prune_df(df, min_freq=2, top_k=None):
     if min_freq:
         good = df.filter(pl.col("frequency") >= min_freq)
@@ -30,6 +31,7 @@ def prune_df(df, min_freq=2, top_k=None):
     # if top_k:
     #     df = df.sort("frequency", descending=True).head(top_k)
     # return df
+
 
 def tournament_merge(input_dir, prune_min_freq=2, prune_top_k=None, *, chunks=None):
     start_time = time.time()
@@ -87,50 +89,6 @@ def tournament_merge(input_dir, prune_min_freq=2, prune_top_k=None, *, chunks=No
     
     return final
 
-def refuse_bin(input_dir, prune_min_freq=2, prune_top_k=None):
-    refuse = []
-    files = [os.path.join(input_dir, f) 
-             for f in os.listdir(input_dir) if f.endswith(".parquet")]
-    
-    for path in tqdm(files, desc="Processing refuse (uncommon fragments)"):
-        df = pl.read_parquet(path)
-        agg = aggregate_df(df)
-        good, bad = prune_df(agg, prune_min_freq, prune_top_k)
-        refuse.append(bad)
-    
-    return pl.concat(refuse, how="vertical")
-
-# def dig_through_refuse(refuse_df: pl.DataFrame):
-#     # search for refuse to look for common fragments
-
-#     mask = refuse_df.select("notes").is_duplicated()
-#     mask.to_frame().write_parquet("data/chords/dupe_mask.parquet")
-
-
-def dig_through_refuse_for_misses_bad(refuse_df: pl.DataFrame, good_df: pl.DataFrame):
-    """
-    Perhaps (in rare cases)
-
-    BAD: sucks, still requires it all to be loaded in memory and more
-    """
-
-    print("Starting refuse digging...")
-    false_misses = refuse_df.lazy().join(
-        good_df.lazy(),
-        on='notes',
-        how='semi'
-    ).collect() # memory allocation of 36464965000 bytes failed
-    print("Filter applied")
-    false_misses.group_by("notes").agg(
-        pl.col("duration").sum().alias("duration"),
-        pl.col("frequency").sum().alias("frequency")
-    )
-    print("Groupby complete")
-    false_misses = false_misses.sort("duration", descending=True)
-    print("Sort complete")
-    false_misses.write_parquet("data/chords/false_misses.parquet")
-    print("File write complete")
-
 
 def dig_through_refuse_for_misses(input_dir, good_df: pl.DataFrame, prune_min_freq=2):
     refuse = []
@@ -172,112 +130,55 @@ def dig_through_refuse_for_misses(input_dir, good_df: pl.DataFrame, prune_min_fr
     infrequent_refuse.write_parquet("data/chords/infrequent_refuse.parquet")
     print("Done")
 
-# def dig_through_refuse(refuse_df: pl.DataFrame):
-#     # search for refuse to look for common fragments
 
-#     mask = refuse_df.select("notes").is_duplicated()
-#     mask.to_frame().write_parquet("data/chords/dupe_mask.parquet")
-
-
-def dig_through_refuse_for_worse_misses(input_dir, good_df: pl.DataFrame, prune_min_freq=2):
-    refuse = []
-    files = [os.path.join(input_dir, f) 
-             for f in os.listdir(input_dir) if f.endswith(".parquet")]
+def main_tournament_step():
     
-    for path in tqdm(files, desc="Processing refuse (uncommon fragments)"):
-        df = pl.read_parquet(path)
-        agg = aggregate_df(df)
-        _, bad = prune_df(agg, prune_min_freq, None)
-        very_bad = bad.join(
-            good_df,
-            on='notes',
-            how='anti'
-        )
-        refuse.append(very_bad)
+    print("Starting tournament merge...")
+    tournament_start = time.time()
     
-    pl.concat(refuse, how="vertical").write_parquet("data/chords/infrequent_refuse.parquet")
-
-# def dig_through_refuse(refuse_df: pl.DataFrame):
-#     # search for refuse to look for common fragments
-
-#     mask = refuse_df.select("notes").is_duplicated()
-#     mask.to_frame().write_parquet("data/chords/dupe_mask.parquet")
-
-
-
-# import duckdb
-
-# def just_aggregate_infrequent():
-#     con = duckdb.connect()
-#     con.execute("""
-#         COPY (
-#             SELECT notes,
-#                    SUM(duration) AS duration,
-#                    SUM(frequency) AS frequency
-#             FROM 'data/chords/infrequent_refuse.parquet'
-#             GROUP BY notes
-#             ORDER BY duration DESC
-#         ) TO 'data/chords/infrequent_agg.parquet' (FORMAT PARQUET);
-#     """)
-#     print("Finished!")
-def main(
-    tournament=False,
-    refuse_dig=True,
-    # group_infrequent_refuse=False
-):
+    final_df = tournament_merge("data/fragments", prune_min_freq=2, prune_top_k=None)
+    print("Tournament done.")
     
+    write_start = time.time()
+    final_df.write_parquet("data/chords/summary_tournament.parquet")
+    write_time = time.time() - write_start
+    
+    print(f"File write took: {write_time:.2f} seconds")
+    tournament_time = time.time() - tournament_start
+    print(f"Tournament merge took: {tournament_time:.2f} seconds")
+
+
+def main_refuse_step():
+    print("Trying to read files...")
+    best = pl.read_parquet("data/chords/summary_tournament.parquet")
+    # Load frequent people from a file or define them
+
+    print("File read complete.")
+    dedup_start = time.time()
+    dig_through_refuse_for_misses(
+        "data/fragments",
+        best
+    )
+    dedup_time = time.time() - dedup_start
+    print(f"Deduplication took: {dedup_time:.2f} seconds")
+    # begin: 4:17 4:46: down to 36; 4:49 (18) 
+
+
+if __name__ == "__main__":
+
     overall_start = time.time()
-    if tournament:
-        print("Starting tournament merge...")
-        tournament_start = time.time()
-        
-        final_df = tournament_merge("data/fragments", prune_min_freq=2, prune_top_k=None)
-        print("Tournament done.")
-        
-        write_start = time.time()
-        final_df.write_parquet("data/chords/summary_tournament.parquet")
-        write_time = time.time() - write_start
-        
-        print(f"File write took: {write_time:.2f} seconds")
-        tournament_time = time.time() - tournament_start
-        print(f"Tournament merge took: {tournament_time:.2f} seconds")
 
-    
-    if refuse_dig:
-        print("Trying to read files...")
-        best = pl.read_parquet("data/chords/summary_tournament.parquet")
-        # Load frequent people from a file or define them
-        # frequent_people = set(tuple(x) for x in best['notes'])
+    # produces data/chords/summary_tournament.parquet
+    main_tournament_step()
 
-        print("File read complete.")
-        dedup_start = time.time()
-        dig_through_refuse_for_misses(
-            "data/fragments",
-            best
-            # frequent_people
-        )
-        dedup_time = time.time() - dedup_start
-        print(f"Deduplication took: {dedup_time:.2f} seconds")
-    
-    # if group_infrequent_refuse:
-    #     print("Grouping infrequent refuse fragments...")
-    #     group_start = time.time()
-    #     just_aggregate_infrequent()
-    #     group_time = time.time() - group_start
-    #     print(f"Grouping took: {group_time:.2f} seconds")
+    # produces data/chords/frequent_refuse.parquet
+    # produces data/chords/infrequent_refuse.parquet
+    main_refuse_step()
+
+    # naively trying to aggregate infrequent_refuse is too slow -- even with duckdb!
+    # NOTE: for a smart way to aggregate 
+    # when we have a large number of unique values
+    # see cyclic_agg_tournament.py
 
     overall_time = time.time() - overall_start
-    
     print(f"Overall execution time: {overall_time:.2f} seconds")
-    
-
-    # begin: 4:17 4:46: down to 36; 4:49 (18) 
-if __name__ == "__main__":
-    main(
-        tournament=True, # produces data/chords/summary_tournament.parquet
-        refuse_dig=True, # produces data/chords/{in|}frequent_refuse.parquet
-        # group_infrequent_refuse=True # tries to aggregate infrequent_refuse, but it is too slow!
-        # NOTE: see cyclic_agg_tournament.py 
-        # for a smart way to aggregate 
-        # when we have a large number of unique values!
-    )
