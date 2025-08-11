@@ -95,10 +95,16 @@ def collect_chords_directory_parallel(
         # Use tqdm with explicit configuration for better visibility
         results = []
         with tqdm(total=len(args), desc="Processing batches", unit="batch") as pbar:
-            for result in pool.starmap(process_batch, args):
+            for result in pool.imap_unordered(_process_batch_wrapper, args):
                 results.append(result)
                 pbar.update(1)
                 pbar.refresh()
+
+
+def _process_batch_wrapper(args):
+    """Wrapper function to unpack arguments for process_batch."""
+    return process_batch(*args)
+
 
 if __name__ == "__main__":
     # Example usage:
