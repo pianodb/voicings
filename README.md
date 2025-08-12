@@ -47,3 +47,16 @@ e a d g b
 c f bb eb g
 
 c eb f g bb
+
+(pcs)
+most_popular_cls_packed.csv
+- pcid: int2 
+- frequency: int4
+- duration: float4
+
+(voicings)
+most_popular_rel_packed.csv
+- digest: str
+- frequency: int4
+- duration: float4
+- pcid: int2
