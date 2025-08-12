@@ -7,7 +7,7 @@ from voicings.core.decipher import pretty_print_chords
 
 def group_by_cls():
     """
-    Group DataFrame by 'cls', considering only those with >=3 unique chroma.
+    Group DataFrame by 'cls', considering only those with >=3 unique pitch classes.
     """
     df = pl.scan_parquet("data/chords/final/final_aggregation_rel.parquet")
     df = df.filter(
@@ -16,10 +16,25 @@ def group_by_cls():
         pl.col("frequency").sum().alias("frequency"),
         pl.col("duration").sum().alias("duration")
     ).sort("frequency", descending=True).collect()
-    print("Grouped by cls with >=3 unique chroma")
+    print("Grouped by cls with >=3 unique pitch classes")
     df = pretty_print_chords(df, col="cls", octave=False)
     df.write_parquet("data/chords/final/most_popular_cls.parquet")
 
+def group_by_rel():
+    """
+    Group DataFrame by 'rel', considering only those with >=3 unique pitch classes.
+    """
+    df = pl.scan_parquet("data/chords/final/final_aggregation_rel.parquet")
+    df = df.filter(
+        pl.col("cls").list.len() >= 3
+    ).group_by("rel").agg(
+        pl.col("frequency").sum().alias("frequency"),
+        pl.col("duration").sum().alias("duration"),
+        pl.col("cls").first().alias("cls")
+    ).sort("frequency", descending=True).collect()
+    print("Grouped by rel with >=3 unique pitch classes")
+    # df = pretty_print_chords(df, col="rel", octave=False)
+    df.write_parquet("data/chords/final/most_popular_rel.parquet")
 
 def hard_analysis():
     """
@@ -57,4 +72,5 @@ def hard_analysis():
 
 if __name__ == "__main__":
     # hard_analysis()
-    group_by_cls()
+    # group_by_cls()
+    group_by_rel()
