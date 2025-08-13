@@ -17,11 +17,12 @@ def desperate_measures():
     for subset in tqdm(df.partition_by("pcid")):
         pcid = subset['pcid'][0]
 
-        # require >= 4 instances
-        subset = subset.filter(pl.col('frequency') >= 4)
-
+        # require >= 5 instances
         # if subset.height > 10000:
-            # subset = subset.filter(pl.col('frequency') >= 10)
+        subset = subset.filter(pl.col('frequency') >= 5)
+
+        if subset.height > 10000:
+            subset = subset.filter(pl.col('frequency') >= 10)
         
 
         # with feasibiltiy criterion: 178 MB -> 125 MB
@@ -34,5 +35,6 @@ def desperate_measures():
         subset.drop('pcid').write_csv(f"data/chords/grouped/{pcid}.csv")
 
 if __name__ == "__main__":
+    # voicings.pianodb.org/api/v1/raw
     desperate_measures()
 
