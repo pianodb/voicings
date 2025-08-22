@@ -74,7 +74,7 @@ def pack_pitch_class(notes: list[int]) -> int:
             raise ValueError("Pitch class must be in range 0-11")
         if note == 0:
             continue # skip 0: since the root is always assumed
-        packed |= (1 << (note-1))
+        packed |= (1 << (11-note))
     return packed
 
 def unpack_pitch_class(pcid: int) -> list[int]:
@@ -85,7 +85,7 @@ def unpack_pitch_class(pcid: int) -> list[int]:
         raise ValueError("PCID must be in range 0-2047")
     notes = [0] # always include root
     for i in range(1, 12):
-        if pcid & (1 << (i-1)):
+        if pcid & (1 << (11-i)):
             notes.append(i)
     return notes
 

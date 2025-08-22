@@ -60,3 +60,7 @@ most_popular_rel_packed.csv
 - frequency: int4
 - duration: float4
 - pcid: int2
+
+
+https://developers.cloudflare.com/r2/examples/aws/aws-cli/
+
